@@ -1,30 +1,116 @@
-This repository contains a custom Extract, Load, Transform (ELT) project that utilizes Docker and PostgreSQL to demonstrate a simple ELT process.
+# Creating a Data Pipeline from Scratch
 
-Repository Structure
-docker-compose.yaml: This file contains the configuration for Docker Compose, which is used to orchestrate multiple Docker containers. It defines three services:
+### **1. Importing Libraries**
 
-source_postgres: The source PostgreSQL database.
-destination_postgres: The destination PostgreSQL database.
-elt_script: The service that runs the ELT script.
-elt_script/Dockerfile: This Dockerfile sets up a Python environment and installs the PostgreSQL client. It also copies the ELT script into the container and sets it as the default command.
+```python
+import subprocess
+import time
+```
 
-elt_script/elt_script.py: This Python script performs the ELT process. It waits for the source PostgreSQL database to become available, then dumps its data to a SQL file and loads this data into the destination PostgreSQL database.
+- **`subprocess`**: This module provides a higher-level interface to working with additional processes. It allows you to spawn new processes, connect to their input/output/error pipes, and obtain their return codes. It's a powerful tool for running shell commands directly from Python scripts.
+- **`time`**: This module provides time-related functions. In this script, it's primarily used for the **`sleep`** function, which introduces a delay.
 
-source_db_init/init.sql: This SQL script initializes the source database with sample data. It creates tables for users, films, film categories, actors, and film actors, and inserts sample data into these tables.
+---
 
-How It Works
-Docker Compose: Using the docker-compose.yaml file, three Docker containers are spun up:
+### **2. `wait_for_postgres` Function**
 
-A source PostgreSQL database with sample data.
-A destination PostgreSQL database.
-A Python environment that runs the ELT script.
-ELT Process: The elt_script.py waits for the source PostgreSQL database to become available. Once it's available, the script uses pg_dump to dump the source database to a SQL file. Then, it uses psql to load this SQL file into the destination PostgreSQL database.
+```python
+def wait_for_postgres(host, max_retries=5, delay_seconds=5):
+    ...
+```
 
-Database Initialization: The init.sql script initializes the source database with sample data. It creates several tables and populates them with sample data.
+This function's purpose is to repeatedly check if a PostgreSQL instance is ready to accept connections.
 
-Getting Started
-Ensure you have Docker and Docker Compose installed on your machine.
-Clone this repository.
-Navigate to the repository directory and run docker-compose up.
-Once all containers are up and running, the ELT process will start automatically.
-After the ELT process completes, you can access the source and destination PostgreSQL databases on ports 5433 and 5434, respectively.
+- **`host`**: The hostname or IP address of the PostgreSQL server.
+- **`max_retries`**: This sets a limit on how many times the function will attempt to connect to the database before it gives up. It's a way to prevent infinite loops if the database is not available.
+- **`delay_seconds`**: After each failed attempt, the function will wait for this many seconds before trying again.
+
+Inside the function:
+
+- **`pg_isready`**: A command-line utility that comes with PostgreSQL. It checks the connection status of a PostgreSQL database instance. The function uses this utility to determine if the database is ready.
+- **`subprocess.run()`**: This method is used to execute the **`pg_isready`** command. If the command fails (i.e., the database isn't ready), a **`CalledProcessError`** exception is raised, which the function catches and handles by waiting and retrying.
+
+---
+
+### **3. Initializing the ELT Process**
+
+```python
+if not wait_for_postgres(host="source_postgres"):
+    exit(1)
+```
+
+Before the main ELT process starts, the script ensures that the source PostgreSQL database is operational. If the database isn't ready after the specified number of retries, the script terminates with an error code (**`exit(1)`**).
+
+---
+
+### **4. Database Configurations**
+
+```python
+source_config = {...}
+destination_config = {...}
+```
+
+These dictionaries store the necessary configurations for both the source and destination PostgreSQL databases:
+
+- **`dbname`**: The name of the database.
+- **`user`**: The username to connect as.
+- **`password`**: The password used for authentication.
+- **`host`**: The server's hostname or IP address. In the context of Docker Compose, you can use the service name as the hostname.
+
+---
+
+### **5. Dumping Data from the Source Database**
+
+```python
+dump_command = [...]
+```
+
+This section constructs the command to use **`pg_dump`**, a utility for backing up a PostgreSQL database. The command's parameters are:
+
+- **`h`**: Specifies the server's hostname.
+- **`U`**: Specifies the username to connect as.
+- **`d`**: Specifies the name of the database to connect to.
+- **`f`**: Specifies the filename to which the dump will be written.
+- **`w`**: Instructs **`pg_dump`** not to prompt for a password.
+
+---
+
+### **6. Loading Data into the Destination Database**
+
+```python
+load_command = [...]
+```
+
+This section constructs the command to use **`psql`**, a terminal-based front-end to PostgreSQL. The command's parameters are:
+
+- **`h`**: Specifies the server's hostname.
+- **`U`**: Specifies the username to connect as.
+- **`d`**: Specifies the name of the database to connect to.
+- **`a`**: Echoes all input from script to stdout.
+- **`f`**: Specifies the filename from which to read and execute commands.
+
+---
+
+### **7. Environment Variables for Authentication**
+
+```python
+subprocess_env = dict(PGPASSWORD=source_config['password'])
+```
+
+To avoid being prompted for a password when running **`pg_dump`** and **`psql`**, the script sets the **`PGPASSWORD`** environment variable. This variable holds the password for the specified PostgreSQL user.
+
+---
+
+### **8. Executing the Commands**
+
+```python
+subprocess.run(dump_command, env=subprocess_env, check=True)
+```
+
+The **`subprocess.run()`** method is used to execute the constructed commands. The **`env`** parameter is used to pass environment variables to the command. The **`check=True`** parameter ensures that if the command results in an error, a **`CalledProcessError`** exception is raised.
+
+---
+
+### **Summary:**
+
+This script is a technical representation of an ELT process, specifically tailored for PostgreSQL databases. It ensures the source database is ready, dumps its data, and then loads this data into the destination database. The script leverages PostgreSQL's built-in utilities (**`pg_dump`** and **`psql`**) and Python's **`subprocess`** module to execute shell commands. The use of Docker Compose service names as hostnames indicates that this script is designed to run within a Dockerized environment, where services can reference each other by their service names.
