@@ -30,7 +30,7 @@ elt/
 
 ### **1️⃣ Clone the Repository**
 ```bash
-git clone <repository_url>
+git clone https://github.com/I-Akash-Sharma/elt/
 cd elt
 ```
 
